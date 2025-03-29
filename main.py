@@ -36,7 +36,7 @@ def get_db():
     finally:
         db.close()
 
-# Definición del modelo para la respuesta de la API
+# Pydantic model para la respuesta de la API
 class UsuarioResponse(BaseModel):
     id: int
     nombre: str
@@ -52,6 +52,16 @@ class UsuarioCreate(BaseModel):
     email: str
     lastname: str
     password: str
+
+# Pydantic model para la actualización de un usuario
+class UsuarioUpdate(BaseModel):
+    nombre: str
+    email: str
+    lastname: str
+    password: str = None  # Hacer la contraseña opcional para la actualización
+
+    class Config:
+        orm_mode = True
 
 # Pydantic model para la autenticación
 class UsuarioLogin(BaseModel):
@@ -96,13 +106,13 @@ def create_usuario(usuario: UsuarioCreate, db: Session = Depends(get_db)):
     if db_usuario:
         raise HTTPException(status_code=400, detail="El usuario ya existe")
     
-    # Crear el nuevo usuario
+    # Crear el nuevo usuario con la contraseña hasheada
     hashed_password = get_password_hash(usuario.password)
     db_usuario = Usuario(
         nombre=usuario.nombre,
         email=usuario.email,
         lastname=usuario.lastname,
-        password=hashed_password
+        password=hashed_password  # Se guarda la contraseña hasheada
     )
     
     db.add(db_usuario)
@@ -117,7 +127,7 @@ def login(usuario: UsuarioLogin, db: Session = Depends(get_db)):
     if not db_usuario or not verify_password(usuario.password, db_usuario.password):
         raise HTTPException(status_code=401, detail="Credenciales inválidas")
     
-    # Crear el token
+    # Crear el token JWT
     access_token = create_access_token(data={"sub": db_usuario.email})
     return {"access_token": access_token, "token_type": "bearer"}
 
@@ -131,7 +141,7 @@ def get_usuario(usuario_id: int, db: Session = Depends(get_db)):
 
 # ✔️ Actualizar un usuario
 @app.put("/usuarios/{usuario_id}", response_model=UsuarioResponse)
-def update_usuario(usuario_id: int, usuario: UsuarioCreate, db: Session = Depends(get_db)):
+def update_usuario(usuario_id: int, usuario: UsuarioUpdate, db: Session = Depends(get_db)):
     db_usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
     if not db_usuario:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
@@ -139,6 +149,11 @@ def update_usuario(usuario_id: int, usuario: UsuarioCreate, db: Session = Depend
     db_usuario.nombre = usuario.nombre
     db_usuario.email = usuario.email
     db_usuario.lastname = usuario.lastname
+
+    # Si se proporciona una nueva contraseña, la actualizamos
+    if usuario.password:
+        db_usuario.password = get_password_hash(usuario.password)
+
     db.commit()
     db.refresh(db_usuario)
     return db_usuario
