@@ -7,8 +7,6 @@ from pydantic import BaseModel
 from passlib.context import CryptContext
 from datetime import datetime, timedelta
 import jwt
-from fastapi.middleware.cors import CORSMiddleware
-
 
 # Secret key for JWT
 SECRET_KEY = "mysecretkey"
@@ -20,14 +18,6 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
-# Allow all origins (you can limit this to specific domains for more security)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["https://main.d287jeeuebb05f.amplifyapp.com"],  # Or specify your frontend URL, e.g., ["https://main.d287jeeuebb05f.amplifyapp.com"]
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 # Dependencia para obtener la sesión de la base de datos
 def get_db():
     db = SessionLocal()
