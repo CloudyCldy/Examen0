@@ -10,4 +10,3 @@ class Usuario(Base):
     nombre = Column(String(100), nullable=False)
     email = Column(String(100), unique=True, nullable=False)
     lastname = Column(String(255), nullable=False)
-    password = Column(String(200),unique=True,nullable=False)
