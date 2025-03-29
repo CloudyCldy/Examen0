@@ -22,7 +22,7 @@ app = FastAPI()
 # ✅ Agregar CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Permite todas las solicitudes (para desarrollo)
+    allow_origins=["https://main.d287jeeuebb05f.amplifyapp.com"],  # Permite todas las solicitudes (para desarrollo)
     allow_credentials=True,
     allow_methods=["*"],   # Permitir todos los métodos (GET, POST, PUT, DELETE)
     allow_headers=["*"]    # Permitir todos los headers
