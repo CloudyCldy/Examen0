@@ -1,148 +1,89 @@
-from fastapi import FastAPI, Depends, HTTPException, status
-from sqlalchemy.orm import Session
-from sqlalchemy import Column, Integer, String
-from database import SessionLocal, engine
-from models import Base, Usuario
-from pydantic import BaseModel
-from passlib.context import CryptContext
-from datetime import datetime, timedelta
-import jwt
-from fastapi.middleware.cors import CORSMiddleware
+import axios from 'axios';
 
+const API_URL = "https://13.218.99.111"; // Your FastAPI server address
 
-# Secret key for JWT
-SECRET_KEY = "kuromi"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+// Create axios instance with default config
+const api = axios.create({
+  baseURL: API_URL,
+  headers: {
+    'Content-Type': 'application/json',
+    // Add any other default headers here
+  },
+  // withCredentials: true, // Uncomment if using cookies/auth
+});
 
-# Crear las tablas en la base de datos
-Base.metadata.create_all(bind=engine)
+// Request interceptor to handle CORS preflight
+api.interceptors.request.use((config) => {
+  // Add CORS headers to every request
+  config.headers['Access-Control-Allow-Origin'] = window.location.origin;
+  return config;
+}, (error) => {
+  return Promise.reject(error);
+});
 
-app = FastAPI()
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["https://main.d287jeeuebb05f.amplifyapp.com"],  # Replace with your React app's domain
-    allow_credentials=True,
-    allow_methods=["*"],  # Allow all HTTP methods
-    allow_headers=["*"],  # Allow all headers
-)
-# Dependencia para obtener la sesión de la base de datos
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-# Definición del modelo para la respuesta de la API
-class UsuarioResponse(BaseModel):
-    id: int
-    nombre: str
-    email: str
-    lastname: str
-
-    class Config:
-        orm_mode = True
-
-# Pydantic model para la creación de un nuevo usuario
-class UsuarioCreate(BaseModel):
-    nombre: str
-    email: str
-    lastname: str
-    password: str
-
-# Pydantic model para la autenticación
-class UsuarioLogin(BaseModel):
-    email: str
-    password: str
-
-# Definición del modelo para el token
-class Token(BaseModel):
-    access_token: str
-    token_type: str
-
-# Crear una instancia del contexto de la contraseña
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-# Función para verificar la contraseña
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
-
-# Función para hashear la contraseña
-def get_password_hash(password):
-    return pwd_context.hash(password)
-
-# Función para crear el JWT
-def create_access_token(data: dict, expires_delta: timedelta = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)):
-    to_encode = data.copy()
-    expire = datetime.utcnow() + expires_delta
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
-
-# ✔️ Obtener todos los usuarios
-@app.get("/usuarios", response_model=list[UsuarioResponse])
-def get_usuarios(db: Session = Depends(get_db)):
-    usuarios = db.query(Usuario).all()
-    return usuarios
-
-# ✔️ Crear un nuevo usuario
-@app.post("/usuarios", response_model=UsuarioResponse)
-def create_usuario(usuario: UsuarioCreate, db: Session = Depends(get_db)):
-    # Verificar si el usuario ya existe
-    db_usuario = db.query(Usuario).filter(Usuario.email == usuario.email).first()
-    if db_usuario:
-        raise HTTPException(status_code=400, detail="El usuario ya existe")
+// Response interceptor for error handling
+api.interceptors.response.use((response) => {
+  return response;
+}, (error) => {
+  if (error.response) {
+    console.error('API Error:', error.response.status, error.response.data);
     
-    # Crear el nuevo usuario
-    hashed_password = get_password_hash(usuario.password)
-    db_usuario = Usuario(nombre=usuario.nombre, email=usuario.email, lastname=usuario.lastname, password=hashed_password)
-    
-    db.add(db_usuario)
-    db.commit()
-    db.refresh(db_usuario)
-    return db_usuario
+    // Handle CORS errors specifically
+    if (error.response.status === 0) {
+      console.error('CORS Error: Request blocked by browser policy');
+      throw new Error('Cross-origin request blocked. Please check server CORS configuration.');
+    }
+  }
+  return Promise.reject(error);
+});
 
-# ✔️ Login de usuario y generar token JWT
-@app.post("/login", response_model=Token)
-def login(usuario: UsuarioLogin, db: Session = Depends(get_db)):
-    db_usuario = db.query(Usuario).filter(Usuario.email == usuario.email).first()
-    if not db_usuario or not verify_password(usuario.password, db_usuario.password):
-        raise HTTPException(status_code=401, detail="Credenciales inválidas")
-    
-    # Crear el token
-    access_token = create_access_token(data={"sub": db_usuario.email})
-    return {"access_token": access_token, "token_type": "bearer"}
+// API functions
+export const getUsuarios = async () => {
+  try {
+    const response = await api.get('/usuarios');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching usuarios:', error);
+    throw error;
+  }
+};
 
-# ✔️ Obtener un usuario por ID
-@app.get("/usuarios/{usuario_id}", response_model=UsuarioResponse)
-def get_usuario(usuario_id: int, db: Session = Depends(get_db)):
-    usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
-    if not usuario:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    return usuario
+export const getUsuarioById = async (id) => {
+  try {
+    const response = await api.get(`/usuarios/${id}`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching usuario ${id}:`, error);
+    throw error;
+  }
+};
 
-# ✔️ Actualizar un usuario
-@app.put("/usuarios/{usuario_id}", response_model=UsuarioResponse)
-def update_usuario(usuario_id: int, usuario: UsuarioCreate, db: Session = Depends(get_db)):
-    db_usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
-    if not db_usuario:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+export const createUsuario = async (usuario) => {
+  try {
+    const response = await api.post('/usuarios', usuario);
+    return response.data;
+  } catch (error) {
+    console.error('Error creating usuario:', error);
+    throw error;
+  }
+};
 
-    db_usuario.nombre = usuario.nombre
-    db_usuario.email = usuario.email
-    db_usuario.lastname = usuario.lastname
-    db.commit()
-    db.refresh(db_usuario)
-    return db_usuario
+export const updateUsuario = async (id, usuario) => {
+  try {
+    const response = await api.put(`/usuarios/${id}`, usuario);
+    return response.data;
+  } catch (error) {
+    console.error(`Error updating usuario ${id}:`, error);
+    throw error;
+  }
+};
 
-# ✔️ Eliminar un usuario
-@app.delete("/usuarios/{usuario_id}", response_model=dict)
-def delete_usuario(usuario_id: int, db: Session = Depends(get_db)):
-    usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
-    if not usuario:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
-
-    db.delete(usuario)
-    db.commit()
-    return {"message": "Usuario eliminado"}
+export const deleteUsuario = async (id) => {
+  try {
+    const response = await api.delete(`/usuarios/${id}`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error deleting usuario ${id}:`, error);
+    throw error;
+  }
+};
