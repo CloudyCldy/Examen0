@@ -5,7 +5,6 @@ from sqlalchemy import Column, Integer, String
 from database import SessionLocal, engine
 from models import Base, Usuario
 from pydantic import BaseModel
-from passlib.context import CryptContext
 from datetime import datetime, timedelta
 import jwt
 
@@ -22,10 +21,10 @@ app = FastAPI()
 # ✅ Agregar CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://main.d287jeeuebb05f.amplifyapp.com"],  # Permite todas las solicitudes (para desarrollo)
+    allow_origins=["*"],  # Permite todas las solicitudes (ajusta esto en producción)
     allow_credentials=True,
-    allow_methods=["*"],   # Permitir todos los métodos (GET, POST, PUT, DELETE)
-    allow_headers=["*"]    # Permitir todos los headers
+    allow_methods=["*"],
+    allow_headers=["*"]
 )
 
 # Dependencia para obtener la sesión de la base de datos
@@ -36,58 +35,44 @@ def get_db():
     finally:
         db.close()
 
-# Pydantic model para la respuesta de la API
+# Modelos Pydantic actualizados
 class UsuarioResponse(BaseModel):
     id: int
     nombre: str
     email: str
-    lastname: str
+    apellido: str
 
     class Config:
         orm_mode = True
 
-# Pydantic model para la creación de un nuevo usuario
 class UsuarioCreate(BaseModel):
     nombre: str
     email: str
-    lastname: str
-    password: str
+    apellido: str  # Ahora usamos apellido como credencial
 
-# Pydantic model para la actualización de un usuario
 class UsuarioUpdate(BaseModel):
     nombre: str
     email: str
-    lastname: str
-    password: str = None  # Hacer la contraseña opcional para la actualización
+    apellido: str
 
     class Config:
         orm_mode = True
 
-# Pydantic model para la autenticación
 class UsuarioLogin(BaseModel):
     email: str
-    password: str
+    apellido: str  # Validamos con apellido en lugar de password
 
-# Definición del modelo para el token
 class Token(BaseModel):
     access_token: str
     token_type: str
 
-# Crear una instancia del contexto de la contraseña
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-# Función para verificar la contraseña
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
-
-# Función para hashear la contraseña
-def get_password_hash(password):
-    return pwd_context.hash(password)
-
 # Función para crear el JWT
-def create_access_token(data: dict, expires_delta: timedelta = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)):
+def create_access_token(data: dict, expires_delta: timedelta = None):
     to_encode = data.copy()
-    expire = datetime.utcnow() + expires_delta
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=15)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
@@ -98,7 +83,7 @@ def get_usuarios(db: Session = Depends(get_db)):
     usuarios = db.query(Usuario).all()
     return usuarios
 
-# ✔️ Crear un nuevo usuario
+# ✔️ Crear un nuevo usuario (sin contraseña, usando apellido)
 @app.post("/usuarios", response_model=UsuarioResponse)
 def create_usuario(usuario: UsuarioCreate, db: Session = Depends(get_db)):
     # Verificar si el usuario ya existe
@@ -106,13 +91,11 @@ def create_usuario(usuario: UsuarioCreate, db: Session = Depends(get_db)):
     if db_usuario:
         raise HTTPException(status_code=400, detail="El usuario ya existe")
     
-    # Crear el nuevo usuario con la contraseña hasheada
-    hashed_password = get_password_hash(usuario.password)
+    # Crear el nuevo usuario con apellido como credencial
     db_usuario = Usuario(
         nombre=usuario.nombre,
         email=usuario.email,
-        lastname=usuario.lastname,
-        password=hashed_password  # Se guarda la contraseña hasheada
+        apellido=usuario.apellido  # No usamos password
     )
     
     db.add(db_usuario)
@@ -120,15 +103,25 @@ def create_usuario(usuario: UsuarioCreate, db: Session = Depends(get_db)):
     db.refresh(db_usuario)
     return db_usuario
 
-# ✔️ Login de usuario y generar token JWT
+# ✔️ Login de usuario validando con apellido
 @app.post("/login", response_model=Token)
 def login(usuario: UsuarioLogin, db: Session = Depends(get_db)):
     db_usuario = db.query(Usuario).filter(Usuario.email == usuario.email).first()
-    if not db_usuario or not verify_password(usuario.password, db_usuario.password):
-        raise HTTPException(status_code=401, detail="Credenciales inválidas")
+    
+    # Validar que el usuario existe y el apellido coincide
+    if not db_usuario or db_usuario.apellido != usuario.apellido:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciales inválidas",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     
     # Crear el token JWT
-    access_token = create_access_token(data={"sub": db_usuario.email})
+    access_token = create_access_token(
+        data={"sub": db_usuario.email},
+        expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    )
+    
     return {"access_token": access_token, "token_type": "bearer"}
 
 # ✔️ Obtener un usuario por ID
@@ -148,11 +141,7 @@ def update_usuario(usuario_id: int, usuario: UsuarioUpdate, db: Session = Depend
 
     db_usuario.nombre = usuario.nombre
     db_usuario.email = usuario.email
-    db_usuario.lastname = usuario.lastname
-
-    # Si se proporciona una nueva contraseña, la actualizamos
-    if usuario.password:
-        db_usuario.password = get_password_hash(usuario.password)
+    db_usuario.apellido = usuario.apellido
 
     db.commit()
     db.refresh(db_usuario)
