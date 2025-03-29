@@ -7,9 +7,11 @@ from pydantic import BaseModel
 from passlib.context import CryptContext
 from datetime import datetime, timedelta
 import jwt
+from fastapi.middleware.cors import CORSMiddleware
+
 
 # Secret key for JWT
-SECRET_KEY = "mysecretkey"
+SECRET_KEY = "kuromi"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
@@ -17,7 +19,13 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 30
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
-
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://main.d287jeeuebb05f.amplifyapp.com"],  # Replace with your React app's domain
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all HTTP methods
+    allow_headers=["*"],  # Allow all headers
+)
 # Dependencia para obtener la sesión de la base de datos
 def get_db():
     db = SessionLocal()
